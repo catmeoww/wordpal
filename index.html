@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EAF4FB">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Word Pal</title>
+<style>
+  :root{
+    --sky:#EAF4FB; --ink:#1D3557; --sun:#FFC94A; --coral:#FF6B6B;
+    --leaf:#3FA66A; --card:#FFFFFF; --line:#C9DEF0;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", "Arial Rounded MT Bold", system-ui, sans-serif;
+    background:var(--sky); color:var(--ink);
+    min-height:100vh;
+    padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .wrap{width:100%; max-width:480px;}
+  header{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  h1{font-size:26px; margin:0; letter-spacing:.5px;}
+  h1 .dot{color:var(--coral);}
+  #gearBtn{
+    background:none; border:none; font-size:22px; padding:6px; cursor:pointer; opacity:.55;
+  }
+  .searchRow{display:flex; gap:8px;}
+  #wordInput{
+    flex:1; font:inherit; font-size:22px; padding:14px 16px;
+    border:3px solid var(--ink); border-radius:18px; background:var(--card);
+    color:var(--ink); outline:none; min-width:0;
+  }
+  #wordInput:focus{border-color:var(--coral);}
+  #goBtn{
+    font:inherit; font-size:20px; font-weight:700; padding:14px 20px;
+    background:var(--sun); color:var(--ink); border:3px solid var(--ink);
+    border-radius:18px; cursor:pointer;
+  }
+  #goBtn:active{transform:scale(.96);}
+  .card{
+    background:var(--card); border:3px solid var(--ink); border-radius:22px;
+    padding:20px; margin-top:18px; display:none;
+    box-shadow:0 6px 0 rgba(29,53,87,.12);
+  }
+  .card.show{display:block; animation:pop .18s ease-out;}
+  @keyframes pop{from{transform:scale(.96); opacity:0;} to{transform:scale(1); opacity:1;}}
+  .emojiBig{font-size:72px; text-align:center; line-height:1.1; margin:2px 0 8px;}
+  .wordLine{display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;}
+  .theWord{font-size:34px; font-weight:800;}
+  .pos{font-size:15px; background:var(--sky); border-radius:10px; padding:3px 10px; color:#4a6a8a;}
+  .speakRow{display:flex; justify-content:center; gap:10px; margin:12px 0 4px;}
+  .speakBtn{
+    font:inherit; font-size:17px; font-weight:700; padding:10px 16px;
+    border:3px solid var(--ink); border-radius:16px; cursor:pointer; background:var(--coral); color:#fff;
+  }
+  .speakBtn.alt{background:var(--card); color:var(--ink);}
+  .speakBtn:active{transform:scale(.95);}
+  .sense{margin-top:14px; padding-top:12px; border-top:2px dashed var(--line);}
+  .sense:first-of-type{border-top:none; padding-top:4px;}
+  .defText{font-size:21px; line-height:1.45;}
+  .exText{font-size:17px; color:#4a6a8a; margin-top:6px; font-style:italic;}
+  .badge{display:inline-block; font-size:13px; font-weight:700; padding:3px 10px; border-radius:10px; margin-top:14px;}
+  .badge.offline{background:#E3F4E9; color:var(--leaf);}
+  .badge.online{background:#FFF3D6; color:#9a6b00;}
+  .msg{font-size:18px; line-height:1.5; text-align:center;}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; justify-content:center;}
+  .chip{
+    font:inherit; font-size:16px; padding:8px 14px; background:var(--card);
+    border:2px solid var(--ink); border-radius:14px; cursor:pointer;
+  }
+  .recentTitle{font-size:14px; color:#4a6a8a; text-align:center; margin:22px 0 0; letter-spacing:1px;}
+  #settings{
+    display:none; margin-top:18px; background:var(--card); border:3px solid var(--ink);
+    border-radius:22px; padding:18px;
+  }
+  #settings.show{display:block;}
+  #settings label{font-size:14px; font-weight:700; display:block; margin-bottom:6px;}
+  #mwKey{width:100%; font:inherit; font-size:15px; padding:10px; border:2px solid var(--line); border-radius:12px;}
+  #saveKey{margin-top:10px; font:inherit; font-size:15px; font-weight:700; padding:10px 16px;
+    background:var(--ink); color:#fff; border:none; border-radius:12px; cursor:pointer;}
+  .hint{font-size:12.5px; color:#4a6a8a; margin-top:8px; line-height:1.5;}
+  @media (prefers-reduced-motion: reduce){ .card.show{animation:none;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Word Pal<span class="dot">.</span></h1>
+    <button id="gearBtn" aria-label="Settings">⚙️</button>
+  </header>
+
+  <div class="searchRow">
+    <input id="wordInput" type="text" placeholder="Type a word…" autocomplete="off" autocapitalize="none" autocorrect="off" enterkeyhint="search">
+    <button id="goBtn">Look&nbsp;up</button>
+  </div>
+
+  <div id="resultCard" class="card"></div>
+
+  <div id="settings">
+    <label for="mwKey">Merriam-Webster Elementary Dictionary API key (for grown-ups)</label>
+    <input id="mwKey" type="text" placeholder="paste key here">
+    <button id="saveKey">Save key</button>
+    <div class="hint">Free key: dictionaryapi.com → register → request the <b>Elementary Dictionary</b> API. Used only when a word is not in the built-in word pack.</div>
+  </div>
+
+  <p class="recentTitle" id="recentTitle" style="display:none">WORDS I LOOKED UP</p>
+  <div class="chips" id="recentChips"></div>
+</div>
+
+<script>
+/* ============================================================
+   BUILT-IN WORD PACK  (grade 2–4 friendly English definitions)
+   Format: word: [part of speech, definition, example, emoji]
+   Add more words any time — just follow the same pattern.
+   ============================================================ */
+const PACK = {
+ancient:["adjective","very, very old; from a long time ago","We saw ancient bones at the museum.","🏺"],
+enormous:["adjective","very, very big","An elephant is enormous.","🐘"],
+gigantic:["adjective","extremely big, like a giant","A gigantic wave splashed the boat.","🌊"],
+massive:["adjective","very big and heavy","The truck carried a massive rock.","🪨"],
+immense:["adjective","extremely large","The ocean is immense.","🌊"],
+tiny:["adjective","very, very small","A ladybug is tiny.","🐞"],
+miniature:["adjective","a very small copy of something","She has a miniature toy house.","🏠"],
+curious:["adjective","wanting to know or learn about things","The curious cat looked in the box.","🐱"],
+brave:["adjective","not afraid; ready to face danger","The brave firefighter saved the dog.","🦸"],
+gentle:["adjective","soft and kind; not rough","Be gentle with the baby bird.","🐣"],
+fierce:["adjective","wild and scary; ready to fight","The fierce lion roared.","🦁"],
+clever:["adjective","smart; good at figuring things out","The clever fox found a way in.","🦊"],
+foolish:["adjective","not smart; silly in a bad way","It is foolish to skate on thin ice.","⛸️"],
+gloomy:["adjective","dark and sad","The gloomy sky made us stay inside.","🌧️"],
+cheerful:["adjective","happy and full of smiles","Her cheerful song made everyone smile.","😊"],
+anxious:["adjective","worried or nervous about something","He felt anxious before the test.","😟"],
+nervous:["adjective","a little scared or worried","I was nervous on the first day of school.","😬"],
+calm:["adjective","quiet and peaceful; not upset","The lake was calm in the morning.","🌅"],
+eager:["adjective","really wanting to do something","She was eager to open her present.","🎁"],
+exhausted:["adjective","very, very tired","After the race, I was exhausted.","😴"],
+weary:["adjective","very tired","The weary hikers rested by the tree.","🥾"],
+furious:["adjective","very, very angry","He was furious when his tower fell.","😡"],
+delighted:["adjective","very happy about something","She was delighted to see her friend.","🥳"],
+terrified:["adjective","very, very scared","The mouse was terrified of the cat.","🐭"],
+startled:["adjective","suddenly surprised or scared","The loud pop startled the puppy.","🎈"],
+amazed:["adjective","very surprised in a good way","We were amazed by the magic trick.","🎩"],
+astonished:["adjective","very, very surprised","I was astonished to see snow in May.","😲"],
+confused:["adjective","not able to understand; mixed up","The map made me confused.","🗺️"],
+puzzled:["adjective","confused; trying to figure something out","She looked puzzled by the riddle.","🧩"],
+proud:["adjective","feeling good about something you did","I am proud of my drawing.","🎨"],
+ashamed:["adjective","feeling bad about something you did","He was ashamed that he lied.","😔"],
+jealous:["adjective","wanting what someone else has","She was jealous of her friend's new bike.","🚲"],
+generous:["adjective","happy to share and give","The generous boy shared his snacks.","🍪"],
+greedy:["adjective","wanting more than you need","The greedy dog took both bones.","🦴"],
+selfish:["adjective","only thinking about yourself","It is selfish to keep all the toys.","🧸"],
+cruel:["adjective","very mean; hurting others on purpose","Being cruel to animals is wrong.","💔"],
+polite:["adjective","having good manners","It is polite to say thank you.","🙏"],
+rude:["adjective","having bad manners; not polite","Talking with a full mouth is rude.","😤"],
+honest:["adjective","telling the truth","An honest person does not lie.","💯"],
+loyal:["adjective","always staying by your friend's side","A loyal dog follows you everywhere.","🐕"],
+patient:["adjective","able to wait calmly without getting upset","Be patient — the cookies are almost done.","⏳"],
+stubborn:["adjective","not willing to change your mind","The stubborn mule would not move.","🫏"],
+timid:["adjective","shy and easily scared","The timid deer hid in the trees.","🦌"],
+bold:["adjective","brave and not shy","The bold squirrel took food from my hand.","🐿️"],
+wise:["adjective","knowing a lot; making good choices","The wise owl gave good advice.","🦉"],
+peculiar:["adjective","strange; not normal","The soup had a peculiar smell.","🍲"],
+ordinary:["adjective","normal; not special","It was just an ordinary school day.","📚"],
+unusual:["adjective","not normal; different and surprising","A purple frog is very unusual.","🐸"],
+rare:["adjective","hard to find; not seen often","This rare coin is very old.","🪙"],
+fragile:["adjective","easy to break","Glass cups are fragile.","🥛"],
+sturdy:["adjective","strong and hard to break","The sturdy table held all the books.","🪵"],
+slippery:["adjective","smooth and hard to hold or walk on","The icy road was slippery.","🧊"],
+damp:["adjective","a little bit wet","My towel is still damp.","💧"],
+soggy:["adjective","very wet and soft","The cereal got soggy in the milk.","🥣"],
+filthy:["adjective","very, very dirty","His shoes were filthy after the mud.","👟"],
+spotless:["adjective","perfectly clean","She kept her room spotless.","✨"],
+cozy:["adjective","warm and comfortable","The cat found a cozy spot by the fire.","🔥"],
+crowded:["adjective","full of too many people","The bus was crowded this morning.","🚌"],
+hollow:["adjective","empty inside","The owl lives in a hollow tree.","🌳"],
+transparent:["adjective","clear; you can see through it","The window glass is transparent.","🪟"],
+invisible:["adjective","not able to be seen","Air is invisible.","🌬️"],
+visible:["adjective","able to be seen","The moon was visible in the day sky.","🌙"],
+brilliant:["adjective","very bright, or very smart","The brilliant star lit up the sky.","⭐"],
+dim:["adjective","not bright; a little dark","The light was too dim to read.","🕯️"],
+dazzling:["adjective","so bright it almost hurts your eyes","The dazzling sun made me squint.","☀️"],
+gleaming:["adjective","shining brightly","The gleaming car just got washed.","🚗"],
+glowing:["adjective","giving off soft light","The glowing lantern lit the tent.","🏮"],
+sparkling:["adjective","shining with little flashes of light","Her sparkling shoes had glitter.","✨"],
+murky:["adjective","dark and hard to see through","We could not see fish in the murky water.","🌫️"],
+chilly:["adjective","a little bit cold","Bring a jacket — it is chilly outside.","🧥"],
+freezing:["adjective","very, very cold","The freezing wind made us shiver.","🥶"],
+scorching:["adjective","very, very hot","It was a scorching summer day.","🥵"],
+severe:["adjective","very bad or very serious","A severe storm knocked down trees.","⛈️"],
+narrow:["adjective","not wide; thin","The narrow path fit only one person.","🛤️"],
+broad:["adjective","wide","The broad river was hard to cross.","🏞️"],
+steep:["adjective","going up or down very sharply","The steep hill was hard to climb.","⛰️"],
+shallow:["adjective","not deep","Little kids swim in the shallow end.","🏊"],
+distant:["adjective","far away","We heard distant thunder.","🌩️"],
+swift:["adjective","very fast","The swift rabbit escaped the fox.","🐇"],
+rapid:["adjective","very fast","Her rapid steps echoed in the hall.","👣"],
+sluggish:["adjective","slow and without energy","I feel sluggish when I wake up early.","🐌"],
+gradual:["adjective","happening slowly, little by little","The gradual hill was easy to walk up.","🚶"],
+sudden:["adjective","happening fast, without warning","A sudden noise woke the baby.","💥"],
+frequent:["adjective","happening many times","She makes frequent visits to the library.","📖"],
+seldom:["adverb","not often; almost never","We seldom see snow here.","❄️"],
+entire:["adjective","whole; all of it","He ate the entire pizza.","🍕"],
+numerous:["adjective","very many","There were numerous stars in the sky.","🌌"],
+scarce:["adjective","hard to find; not enough of it","Water is scarce in the desert.","🏜️"],
+essential:["adjective","very important; needed","Sleep is essential for your body.","🛏️"],
+valuable:["adjective","worth a lot of money, or very important","The ring is valuable.","💍"],
+precious:["adjective","loved very much; worth a lot","The photos are precious to grandma.","📷"],
+worthless:["adjective","worth nothing","The broken toy was worthless.","🗑️"],
+useless:["adjective","not helpful at all","A flashlight is useless without batteries.","🔦"],
+handy:["adjective","useful and easy to use","A pocket knife is handy for camping.","🔧"],
+cautious:["adjective","very careful","Be cautious crossing the street.","🚸"],
+careless:["adjective","not careful","The careless boy spilled his juice.","🧃"],
+gather:["verb","to bring things or people together","We gather leaves in the fall.","🍂"],
+scatter:["verb","to throw things in many directions","The wind scattered the papers.","📄"],
+wander:["verb","to walk around with no plan","We wandered around the park.","🚶"],
+roam:["verb","to travel around freely","Wild horses roam the hills.","🐎"],
+dash:["verb","to run very fast for a short time","She dashed to catch the bus.","🏃"],
+sprint:["verb","to run as fast as you can","He sprinted to the finish line.","🏁"],
+stroll:["verb","to walk slowly for fun","We strolled along the beach.","🏖️"],
+creep:["verb","to move slowly and quietly","The cat crept toward the toy.","🐈"],
+crawl:["verb","to move on your hands and knees","Babies crawl before they walk.","👶"],
+leap:["verb","to jump high or far","The frog leaped over the log.","🐸"],
+soar:["verb","to fly high in the sky","Eagles soar above the mountains.","🦅"],
+glide:["verb","to move smoothly through air or on ice","The skater glided across the rink.","⛸️"],
+drift:["verb","to move slowly, carried by water or wind","The boat drifted down the river.","⛵"],
+plunge:["verb","to fall or jump down fast, often into water","She plunged into the cool pool.","💦"],
+tumble:["verb","to fall and roll over","The puppy tumbled down the small hill.","🐶"],
+stumble:["verb","to trip and almost fall","He stumbled over the rock.","🪨"],
+tremble:["verb","to shake because you are cold or scared","Her hands trembled in the cold.","🥶"],
+shiver:["verb","to shake because you are cold","We shivered in the snow.","❄️"],
+whisper:["verb","to speak very, very quietly","She whispered a secret to me.","🤫"],
+mutter:["verb","to speak quietly so people can't hear well","He muttered something and walked away.","😒"],
+murmur:["verb","to make a soft, low sound","The stream murmured over the rocks.","🏞️"],
+shout:["verb","to speak very loudly; to yell","Don't shout in the library.","📢"],
+shriek:["verb","to make a loud, high scream","She shrieked when she saw the spider.","🕷️"],
+screech:["verb","to make a loud, high, ugly sound","The car's brakes screeched.","🚗"],
+groan:["verb","to make a low sound when hurt or unhappy","He groaned when he saw the homework.","📝"],
+moan:["verb","to make a long, low sad sound","The sick boy moaned in bed.","🤒"],
+sigh:["verb","to breathe out slowly when tired or sad","She sighed and started over.","😮‍💨"],
+gasp:["verb","to take a quick, loud breath in surprise","The crowd gasped at the trick.","😲"],
+pant:["verb","to breathe fast, like after running","The dog panted after the run.","🐕"],
+sob:["verb","to cry hard, taking short breaths","The little girl sobbed over her broken toy.","😭"],
+weep:["verb","to cry","She wept at the sad movie.","🎬"],
+chuckle:["verb","to laugh quietly","Dad chuckled at the joke.","😄"],
+giggle:["verb","to laugh in a light, silly way","The kids giggled at the puppet.","🎭"],
+grin:["verb","to give a big smile","He grinned when he won.","😁"],
+frown:["verb","to make an unhappy face","She frowned at the rain.","☹️"],
+glare:["verb","to look at someone in an angry way","He glared at his noisy brother.","😠"],
+gaze:["verb","to look at something for a long time","We gazed at the stars.","🌟"],
+stare:["verb","to look at something without looking away","It is rude to stare at people.","👀"],
+peek:["verb","to take a quick, secret look","She peeked inside the gift bag.","🎁"],
+peer:["verb","to look closely, trying to see better","He peered through the fog.","🌫️"],
+glance:["verb","to look at something very quickly","She glanced at the clock.","⏰"],
+observe:["verb","to watch something carefully","We observed the ants carrying food.","🐜"],
+notice:["verb","to see something for the first time","Did you notice her new haircut?","💇"],
+discover:["verb","to find something for the first time","They discovered a hidden cave.","🕳️"],
+explore:["verb","to travel around a new place to learn about it","Let's explore the forest.","🧭"],
+investigate:["verb","to look for clues to find out the truth","The police investigated the missing bike.","🔍"],
+examine:["verb","to look at something very carefully","The doctor examined my ear.","🩺"],
+seek:["verb","to look for something","We played hide and seek.","🙈"],
+chase:["verb","to run after someone or something","The dog chased the ball.","⚽"],
+pursue:["verb","to chase or follow to catch","The cat pursued the mouse.","🐭"],
+capture:["verb","to catch and hold someone or something","They captured the runaway goat.","🐐"],
+seize:["verb","to grab quickly and hold tight","The bird seized the worm.","🐦"],
+grasp:["verb","to hold tightly, or to understand","Grasp the rope with both hands.","🪢"],
+clutch:["verb","to hold something very tightly","She clutched her teddy bear.","🧸"],
+release:["verb","to let go; to set free","We released the butterfly.","🦋"],
+toss:["verb","to throw gently","Toss me the keys, please.","🔑"],
+hurl:["verb","to throw very hard","He hurled the ball across the field.","⚾"],
+fling:["verb","to throw with a fast, careless motion","She flung her backpack on the couch.","🎒"],
+drag:["verb","to pull something heavy along the ground","We dragged the sled up the hill.","🛷"],
+haul:["verb","to pull or carry something heavy","The truck hauled the logs away.","🚛"],
+tug:["verb","to pull hard with a quick motion","The puppy tugged on my sock.","🧦"],
+shove:["verb","to push hard and roughly","Don't shove in line.","🚶"],
+nudge:["verb","to push gently, often with your elbow","She nudged me and pointed at the deer.","🦌"],
+squeeze:["verb","to press something tightly","Squeeze the lemon for juice.","🍋"],
+stretch:["verb","to make longer, or reach out your body","Stretch before you run.","🤸"],
+shatter:["verb","to break into many small pieces","The plate shattered on the floor.","🍽️"],
+crumble:["verb","to break into small pieces","The old wall is starting to crumble.","🧱"],
+crush:["verb","to press something so hard it breaks","Don't crush the crackers.","🍘"],
+mend:["verb","to fix something broken or torn","Grandma mended my torn shirt.","🧵"],
+repair:["verb","to fix something broken","Dad repaired my bike chain.","🚲"],
+construct:["verb","to build something","They constructed a birdhouse.","🏗️"],
+invent:["verb","to make something totally new","Who invented the telephone?","📞"],
+imagine:["verb","to make a picture in your mind","Imagine you can fly!","🪁"],
+ponder:["verb","to think about something carefully","He pondered the puzzle for hours.","🤔"],
+consider:["verb","to think about before deciding","Consider both choices first.","⚖️"],
+select:["verb","to pick; to choose","Select your favorite color.","🎨"],
+prefer:["verb","to like one thing more than another","I prefer apples over bananas.","🍎"],
+refuse:["verb","to say no to something","The baby refused to eat peas.","🫛"],
+accept:["verb","to say yes; to take what is given","She accepted the invitation.","💌"],
+argue:["verb","to fight with words","They argued about the game rules.","🎲"],
+quarrel:["verb","to have an angry fight with words","The brothers quarreled over the remote.","📺"],
+complain:["verb","to say you are unhappy about something","He complained that the soup was cold.","🍜"],
+insist:["verb","to keep saying something must happen","Mom insisted I wear a coat.","🧥"],
+demand:["verb","to ask for something very strongly","The king demanded more gold.","👑"],
+request:["verb","to ask for something politely","She requested a window seat.","💺"],
+plead:["verb","to beg; to ask with strong feeling","He pleaded for one more story.","📖"],
+promise:["verb","to say you will really do something","I promise to clean my room.","🤞"],
+warn:["verb","to tell someone about danger","The sign warns about the wet floor.","⚠️"],
+protect:["verb","to keep safe from harm","Helmets protect your head.","⛑️"],
+defend:["verb","to keep safe from attack","The mother bear defended her cubs.","🐻"],
+rescue:["verb","to save someone from danger","Firefighters rescued the cat from the tree.","🚒"],
+escape:["verb","to get away from a place or danger","The hamster escaped from its cage.","🐹"],
+flee:["verb","to run away from danger","The deer fled from the wolf.","🐺"],
+vanish:["verb","to disappear suddenly","The magician made the coin vanish.","🪄"],
+disappear:["verb","to go away so no one can see it","The sun disappeared behind clouds.","☁️"],
+appear:["verb","to come into view; to show up","A rainbow appeared after the rain.","🌈"],
+arrive:["verb","to get to a place","The train arrives at noon.","🚆"],
+depart:["verb","to leave a place","The plane departs at nine.","✈️"],
+remain:["verb","to stay; to be left","Only two cookies remain.","🍪"],
+continue:["verb","to keep going","Continue reading to page ten.","📖"],
+pause:["verb","to stop for a short time","Pause the video, please.","⏸️"],
+hesitate:["verb","to stop for a moment because you're not sure","She hesitated before jumping in.","🏊"],
+delay:["verb","to make something happen later","Rain delayed the game.","🌧️"],
+hurry:["verb","to move or do something fast","Hurry, or we'll miss the bus!","🚌"],
+prepare:["verb","to get ready","We prepared for the trip.","🧳"],
+arrange:["verb","to put things in order, or to plan","She arranged the flowers in a vase.","💐"],
+organize:["verb","to put things in neat order","Let's organize the toy shelf.","🗂️"],
+collect:["verb","to gather things you like, or bring together","He collects baseball cards.","🃏"],
+deliver:["verb","to bring something to a person or place","The mail carrier delivers letters.","📬"],
+provide:["verb","to give what is needed","Trees provide shade.","🌳"],
+supply:["verb","to give things that are needed","The store supplies food to the town.","🏪"],
+receive:["verb","to get something that is given to you","I received a card on my birthday.","🎂"],
+borrow:["verb","to take something and give it back later","May I borrow your pencil?","✏️"],
+lend:["verb","to let someone use your thing for a while","I can lend you my umbrella.","☂️"],
+trade:["verb","to give one thing and get another","Want to trade snacks?","🥨"],
+swap:["verb","to trade one thing for another","We swapped seats on the bus.","💺"],
+earn:["verb","to get money or a reward for work","She earns money by walking dogs.","🐕"],
+spend:["verb","to use money or time","Don't spend all your coins at once.","🪙"],
+waste:["verb","to use something in a careless way","Don't waste water.","🚿"],
+store:["verb","to keep something to use later","Squirrels store nuts for winter.","🌰"],
+contain:["verb","to have something inside","The box contains old photos.","📦"],
+include:["verb","to have as a part of something","The meal includes a drink.","🥤"],
+attach:["verb","to stick or join one thing to another","Attach the stamp to the envelope.","✉️"],
+connect:["verb","to join two things together","Connect the train cars.","🚂"],
+separate:["verb","to move apart; to divide","Separate the red and blue blocks.","🟥"],
+divide:["verb","to split into parts","Divide the pizza into eight slices.","🍕"],
+spread:["verb","to open out, or cover a surface","Spread jam on the toast.","🍞"],
+reveal:["verb","to show something that was hidden","She revealed the surprise.","🎉"],
+conceal:["verb","to hide something","He concealed the gift behind his back.","🎁"],
+canyon:["noun","a deep, narrow valley with steep rock walls","The Grand Canyon is huge.","🏜️"],
+cliff:["noun","a high, steep wall of rock","Waves crashed below the cliff.","🪨"],
+valley:["noun","low land between hills or mountains","A river runs through the valley.","🏞️"],
+meadow:["noun","a field of grass and flowers","Butterflies flew over the meadow.","🌼"],
+prairie:["noun","a big, flat land covered with grass","Bison live on the prairie.","🦬"],
+desert:["noun","very dry land with little rain","Cactuses grow in the desert.","🌵"],
+swamp:["noun","soft, wet land with trees and water","Alligators live in the swamp.","🐊"],
+marsh:["noun","soft, wet, grassy land","Frogs sing in the marsh at night.","🐸"],
+harbor:["noun","a safe place by the shore where boats stay","The ships rested in the harbor.","⚓"],
+coast:["noun","the land next to the ocean","We drove along the coast.","🌊"],
+shore:["noun","the land at the edge of water","We found shells on the shore.","🐚"],
+peninsula:["noun","land with water on three sides","Florida is a peninsula.","🗺️"],
+volcano:["noun","a mountain that can shoot out hot melted rock","The volcano erupted with lava.","🌋"],
+glacier:["noun","a giant river of ice that moves slowly","The glacier carved the valley.","🧊"],
+blizzard:["noun","a big snow storm with strong wind","School closed because of the blizzard.","🌨️"],
+drought:["noun","a long time with no rain","The plants died in the drought.","🌵"],
+flood:["noun","when water covers land that is usually dry","The heavy rain caused a flood.","🌊"],
+earthquake:["noun","when the ground shakes","The earthquake rattled the windows.","🫨"],
+hurricane:["noun","a giant storm with very strong wind and rain","The hurricane came from the ocean.","🌀"],
+tornado:["noun","a spinning column of wind shaped like a funnel","The tornado twisted across the field.","🌪️"],
+thunder:["noun","the loud boom you hear after lightning","Thunder rumbled in the distance.","⛈️"],
+lightning:["noun","a bright flash of electricity in the sky","Lightning lit up the night.","⚡"],
+breeze:["noun","a soft, light wind","A cool breeze blew off the sea.","🍃"],
+gust:["noun","a sudden, strong blow of wind","A gust of wind took my hat.","🎩"],
+current:["noun","water or air moving in one direction","The river current is strong.","🌊"],
+tide:["noun","the sea rising and falling each day","At low tide we find crabs.","🦀"],
+stream:["noun","a small river","We crossed the stream on stones.","🏞️"],
+creek:["noun","a small stream","Tadpoles swim in the creek.","🐸"],
+pond:["noun","a small area of still water","Ducks swim in the pond.","🦆"],
+puddle:["noun","a small pool of water on the ground","He jumped in every puddle.","💦"],
+cave:["noun","a big hole in a hill or underground","Bats live in the cave.","🦇"],
+cavern:["noun","a very large cave","The cavern was dark and echoey.","🕳️"],
+tunnel:["noun","a long hole through the ground or a hill","The train went through the tunnel.","🚇"],
+tower:["noun","a tall, narrow building","The clock tower rings at noon.","🗼"],
+castle:["noun","a big, strong building where kings lived","The castle has tall stone walls.","🏰"],
+palace:["noun","a huge, fancy home for a king or queen","The queen lives in a palace.","👑"],
+cottage:["noun","a small, cozy house","Grandma's cottage is by the lake.","🏡"],
+cabin:["noun","a small, simple house, often made of wood","We stayed in a cabin in the woods.","🛖"],
+barn:["noun","a farm building for animals and hay","Cows sleep in the barn.","🐄"],
+stable:["noun","a building where horses are kept","The horse rested in its stable.","🐴"],
+orchard:["noun","a field of fruit trees","We picked apples in the orchard.","🍎"],
+wilderness:["noun","wild land where no people live","Bears roam the wilderness.","🐻"],
+trail:["noun","a path through nature","We hiked the mountain trail.","🥾"],
+journey:["noun","a long trip","Their journey took three days.","🧳"],
+voyage:["noun","a long trip by ship or into space","The voyage crossed the ocean.","🚢"],
+adventure:["noun","an exciting and maybe risky experience","Camping was a great adventure.","🏕️"],
+expedition:["noun","a trip made to explore or find something","The expedition climbed the mountain.","🏔️"],
+destination:["noun","the place you are going to","Our destination is the beach.","🏖️"],
+passenger:["noun","a person riding in a car, bus, plane, or boat","Every passenger wore a seatbelt.","💺"],
+vehicle:["noun","a machine that carries people or things","A bus is a big vehicle.","🚌"],
+engine:["noun","a machine that makes things move","The car engine roared.","🏎️"],
+machine:["noun","a thing with parts that does work","A washing machine cleans clothes.","🧺"],
+invention:["noun","a brand-new thing someone made","The light bulb was a great invention.","💡"],
+instrument:["noun","a tool, or something that makes music","The violin is a string instrument.","🎻"],
+weapon:["noun","a thing used for fighting","A sword is an old kind of weapon.","🗡️"],
+shield:["noun","a flat guard held to block hits","The knight raised his shield.","🛡️"],
+armor:["noun","a hard covering that protects the body","Knights wore metal armor.","⚔️"],
+treasure:["noun","gold, jewels, or things worth a lot","Pirates buried the treasure.","💰"],
+jewel:["noun","a beautiful, valuable stone","The crown sparkled with jewels.","💎"],
+fortune:["noun","a lot of money, or your luck","He made a fortune selling lemonade.","🤑"],
+wealth:["noun","a lot of money and things","The king had great wealth.","👑"],
+audience:["noun","the people watching a show","The audience clapped loudly.","👏"],
+neighbor:["noun","a person who lives near you","Our neighbor has a friendly dog.","🏘️"],
+stranger:["noun","a person you do not know","Don't open the door for a stranger.","🚪"],
+companion:["noun","a friend who goes places with you","My dog is my best companion.","🐕"],
+enemy:["noun","someone who is against you","The knights fought their enemies.","⚔️"],
+hero:["noun","a person who does something brave or great","The hero saved the town.","🦸"],
+villain:["noun","the bad person in a story","The villain stole the treasure.","🦹"],
+giant:["noun","a make-believe person who is very, very big","The giant lived above the beanstalk.","🌱"],
+creature:["noun","any living animal or being","Strange creatures live deep in the sea.","🐙"],
+beast:["noun","a big or wild animal","A lion is a mighty beast.","🦁"],
+insect:["noun","a small animal with six legs","An ant is an insect.","🐜"],
+mammal:["noun","an animal with hair that feeds milk to its babies","A whale is a mammal, not a fish.","🐋"],
+reptile:["noun","a cold-blooded animal with scaly skin","A snake is a reptile.","🐍"],
+herd:["noun","a group of animals like cows or elephants","A herd of cows crossed the road.","🐄"],
+flock:["noun","a group of birds or sheep","A flock of geese flew south.","🪿"],
+swarm:["noun","a big group of insects moving together","A swarm of bees left the hive.","🐝"],
+nest:["noun","a home a bird builds for its eggs","Three eggs sat in the nest.","🪺"],
+burrow:["noun","a hole in the ground where an animal lives","The rabbit ran into its burrow.","🐇"],
+den:["noun","a wild animal's home","The fox slept in its den.","🦊"],
+habitat:["noun","the natural home of a plant or animal","The ocean is a dolphin's habitat.","🐬"],
+shelter:["noun","a place that keeps you safe and dry","The tent was our shelter from rain.","⛺"],
+feast:["noun","a big, special meal","We had a feast on Thanksgiving.","🦃"],
+banquet:["noun","a big fancy dinner for many people","The king held a banquet.","🍽️"],
+ingredient:["noun","one of the things you mix to make food","Flour is an ingredient in bread.","🌾"],
+recipe:["noun","the steps for making a food","Follow the recipe to bake cookies.","🍪"],
+flavor:["noun","the way food tastes","Chocolate is my favorite flavor.","🍫"],
+aroma:["noun","a nice smell","The aroma of bread filled the house.","🥖"],
+odor:["noun","a smell, often a bad one","The trash had a bad odor.","🗑️"],
+scent:["noun","a smell, often a nice one","The scent of roses filled the garden.","🌹"],
+echo:["noun","a sound that bounces back to you","We heard our echo in the canyon.","🗣️"],
+silence:["noun","no sound at all","There was silence during the test.","🤐"],
+signal:["noun","a sign, sound, or light that gives a message","The green light is a signal to go.","🚦"],
+message:["noun","words sent from one person to another","She left a message on the note.","📝"],
+secret:["noun","something you keep hidden from others","Can you keep a secret?","🤫"],
+mystery:["noun","something strange that is hard to explain","The missing cookie was a mystery.","🕵️"],
+clue:["noun","a hint that helps solve a mystery","The muddy footprint was a clue.","👣"],
+evidence:["noun","facts that show something is true","The crumbs were evidence of the snack thief.","🍪"],
+solution:["noun","the answer to a problem","She found a solution to the puzzle.","🧩"],
+opinion:["noun","what you think or feel about something","In my opinion, dogs are the best.","🐶"],
+fact:["noun","something that is true","It is a fact that fish live in water.","🐟"],
+detail:["noun","one small part of something","She drew every detail of the house.","🏠"],
+reason:["noun","why something happens","The reason I'm late is the traffic.","🚗"],
+purpose:["noun","the reason something is done or made","The purpose of a fence is to keep pets safe.","🚧"],
+goal:["noun","something you try hard to do","My goal is to read ten books.","📚"],
+schedule:["noun","a plan of times for doing things","Lunch is at noon on our schedule.","📅"],
+event:["noun","something that happens, often special","The school fair is a fun event.","🎪"],
+celebration:["noun","a party for something special","We had a celebration for grandpa's birthday.","🎉"],
+festival:["noun","a big celebration, often with food and music","The fall festival has hay rides.","🎡"],
+ceremony:["noun","a formal event with special steps","We watched the flag ceremony.","🎖️"],
+tradition:["noun","something a family or group does again every year","Making dumplings is our new year tradition.","🥟"],
+custom:["noun","a usual way of doing things in a group","Bowing is a custom in Japan.","🙇"],
+habit:["noun","something you do again and again","Brushing teeth at night is a good habit.","🪥"],
+talent:["noun","something you are naturally good at","Singing is her talent.","🎤"],
+skill:["noun","something you learn to do well","Riding a bike is a skill.","🚲"],
+effort:["noun","the hard work you put into something","She put great effort into her project.","💪"],
+courage:["noun","being brave when you are scared","It took courage to speak on stage.","🎤"],
+danger:["noun","something that could hurt you","The sign warns of danger ahead.","⚠️"],
+accident:["noun","something bad that happens by mistake","He broke the cup by accident.","🥛"],
+injury:["noun","harm or hurt to your body","The knee injury kept him from playing.","🤕"],
+wound:["noun","a cut or hurt place on the body","The nurse cleaned the wound.","🩹"],
+medicine:["noun","something you take to feel better when sick","Take your medicine with water.","💊"],
+cure:["noun","something that makes a sickness go away","Scientists look for cures for diseases.","🔬"],
+energy:["noun","the power to move, work, and play","Kids have lots of energy.","⚡"],
+strength:["noun","how strong you are","Lifting the box took all my strength.","💪"],
+weakness:["noun","a part that is not strong","Spelling is my weakness.","📝"],
+memory:["noun","something you remember","The trip is a happy memory.","📸"],
+thought:["noun","an idea in your mind","A funny thought made me smile.","💭"],
+nightmare:["noun","a bad, scary dream","The nightmare woke him up.","😨"],
+fortunate:["adjective","lucky","We were fortunate to find shade.","🍀"],
+miserable:["adjective","very unhappy or uncomfortable","He felt miserable with a cold.","🤧"],
+grateful:["adjective","thankful","I am grateful for my friends.","🙏"],
+comfort:["verb","to make someone feel better","She comforted the crying baby.","🤗"],
+encourage:["verb","to give someone hope to keep trying","The coach encouraged the team.","📣"],
+admire:["verb","to look up to; to really like","I admire how kind she is.","🌟"],
+respect:["verb","to treat someone as important","Respect your teachers.","🍎"],
+celebrate:["verb","to do something fun for a special day","We celebrate birthdays with cake.","🎂"],
+compare:["verb","to see how things are the same or different","Compare the two pictures.","🖼️"],
+describe:["verb","to tell what something is like","Describe your favorite animal.","🦒"],
+explain:["verb","to make something easy to understand","Can you explain the rules?","📋"],
+predict:["verb","to say what you think will happen","I predict it will rain today.","🌧️"],
+estimate:["verb","to make a careful guess about a number","Estimate how many candies are in the jar.","🍬"],
+measure:["verb","to find out how big, long, or heavy","Measure the table with a ruler.","📏"],
+summary:["noun","a short telling of the main ideas","Write a summary of the story.","📄"],
+paragraph:["noun","a group of sentences about one idea","Read the first paragraph.","📃"],
+sentence:["noun","a group of words that tells a complete idea","Start your sentence with a capital letter.","🔤"],
+character:["noun","a person or animal in a story","The main character is a brave mouse.","🐭"],
+plot:["noun","what happens in a story","The plot has a big surprise.","📖"],
+setting:["noun","where and when a story happens","The setting is a castle long ago.","🏰"],
+author:["noun","the person who writes a book","The author signed my book.","✍️"],
+illustration:["noun","a picture in a book","The illustrations are colorful.","🖍️"],
+title:["noun","the name of a book, movie, or song","The title is on the cover.","📕"],
+chapter:["noun","one part of a book","We read one chapter each night.","📖"],
+library:["noun","a place full of books you can borrow","We visit the library on Saturdays.","📚"],
+dictionary:["noun","a book that tells what words mean","Look up new words in the dictionary.","📖"],
+language:["noun","the words people use to talk and write","She speaks two languages.","🗣️"],
+temperature:["noun","how hot or cold something is","The temperature dropped at night.","🌡️"],
+weather:["noun","what the sky and air are like outside","The weather is sunny today.","☀️"],
+season:["noun","one of the four parts of the year","Fall is my favorite season.","🍂"],
+climate:["noun","the usual weather of a place","Deserts have a hot, dry climate.","🏜️"],
+planet:["noun","a big round world that moves around a sun","Earth is our planet.","🌍"],
+universe:["noun","everything in space — all stars and planets","The universe is bigger than we can imagine.","🌌"],
+gravity:["noun","the force that pulls things down to the ground","Gravity makes the apple fall.","🍎"],
+oxygen:["noun","the part of air that we need to breathe","We breathe in oxygen.","🌬️"],
+liquid:["noun","something that flows, like water","Milk is a liquid.","🥛"],
+solid:["noun","something hard that keeps its shape","Ice is a solid.","🧊"],
+temperature2:["noun","",""],
+skeleton:["noun","all the bones in a body","The skeleton holds your body up.","🦴"],
+muscle:["noun","the parts of your body that make you move","Exercise makes your muscles strong.","💪"],
+stomach:["noun","the part of your body where food goes","My stomach growled before lunch.","🍽️"],
+brain:["noun","the part of your body that thinks","Your brain helps you learn.","🧠"],
+heart:["noun","the part of your body that pumps blood","Your heart beats faster when you run.","❤️"],
+germ:["noun","a tiny living thing that can make you sick","Wash your hands to kill germs.","🧼"],
+disease:["noun","a sickness","Doctors help fight diseases.","🩺"],
+emergency:["noun","a sudden, serious problem needing fast help","Call 911 in an emergency.","🚨"],
+ambulance:["noun","a special van that takes sick people to the hospital","The ambulance rushed to help.","🚑"],
+community:["noun","all the people who live in one place","Our community held a clean-up day.","🏘️"],
+citizen:["noun","a person who belongs to a town or country","Good citizens follow the rules.","🗳️"],
+government:["noun","the group of people who lead a country or town","The government makes the laws.","🏛️"],
+law:["noun","a rule that everyone must follow","Wearing a seatbelt is the law.","⚖️"],
+vote:["verb","to choose by marking or raising your hand","We voted for the class pet name.","🗳️"],
+predator:["noun","an animal that hunts other animals","The hawk is a predator.","🦅"],
+prey:["noun","an animal that is hunted by another","Rabbits are prey for foxes.","🐇"],
+camouflage:["noun","colors that help an animal hide","The lizard's camouflage matches the rock.","🦎"],
+hibernate:["verb","to sleep through the winter","Bears hibernate in caves.","🐻"],
+migrate:["verb","to move to another place when seasons change","Birds migrate south in winter.","🕊️"],
+extinct:["adjective","no longer living anywhere on Earth","Dinosaurs are extinct.","🦕"],
+fossil:["noun","the remains of a plant or animal from long ago","We found a fossil in the rock.","🦴"],
+ancestor:["noun","a family member who lived long before you","My ancestors came from Taiwan.","👴"],
+century:["noun","one hundred years","A century is a very long time.","🕰️"],
+decade:["noun","ten years","A decade has ten years in it.","🔟"],
+calendar:["noun","a chart of the days, weeks, and months","Circle your birthday on the calendar.","📅"],
+midnight:["noun","twelve o'clock at night","We stayed up until midnight!","🕛"],
+dawn:["noun","the time when the sun comes up","The birds sing at dawn.","🌅"],
+dusk:["noun","the time when the sun goes down","The streetlights turn on at dusk.","🌆"],
+horizon:["noun","the line where the sky meets the land or sea","The ship sailed over the horizon.","🌅"],
+shadow:["noun","the dark shape made when something blocks light","My shadow is long in the evening.","🕴️"],
+reflection:["noun","what you see in a mirror or still water","She saw her reflection in the pond.","🪞"],
+temperature3:["noun","",""],
+patience:["noun","the ability to wait calmly","Fishing takes patience.","🎣"],
+kindness:["noun","being nice and caring to others","Her kindness made him smile.","💝"],
+honesty:["noun","telling the truth","Honesty is the best policy.","💯"],
+freedom:["noun","being able to do and choose things","The bird flew to freedom.","🕊️"],
+peace:["noun","a time with no fighting; calm and quiet","We wish for peace in the world.","☮️"],
+victory:["noun","a win","The team cheered for their victory.","🏆"],
+defeat:["noun","a loss; being beaten","They felt sad after the defeat.","😞"],
+champion:["noun","the winner of a game or contest","She is the spelling champion.","🏅"],
+opponent:["noun","the person or team you play against","Shake hands with your opponent.","🤝"],
+challenge:["noun","something hard that tests you","Climbing the wall was a challenge.","🧗"],
+attempt:["verb","to try to do something","He attempted a backflip.","🤸"],
+succeed:["verb","to do what you tried to do","Keep trying and you will succeed.","🌟"],
+fail:["verb","to not be able to do something","It's okay to fail and try again.","🔁"],
+improve:["verb","to get better at something","Practice helps you improve.","📈"],
+practice:["verb","to do something again and again to get better","She practices piano every day.","🎹"],
+concentrate:["verb","to think hard about one thing","Concentrate on your homework.","🧠"],
+memorize:["verb","to learn something so you remember it","Memorize your phone number.","📱"],
+recognize:["verb","to know something when you see it","I recognized her voice right away.","🗣️"],
+realize:["verb","to suddenly understand something","I realized I forgot my lunch.","🍱"],
+understand:["verb","to know what something means","Now I understand the math problem.","➗"],
+knowledge:["noun","all the things you know","Books are full of knowledge.","📚"],
+curiosity:["noun","wanting to learn and know things","Her curiosity led her to the science club.","🔬"],
+imagination:["noun","the power to make pictures and ideas in your mind","Use your imagination to write a story.","🌈"],
+temperature4:["noun","",""],
+enormously:["adverb","very much; hugely","He enjoyed the party enormously.","🎉"],
+immediately:["adverb","right now; without waiting","Come here immediately!","⏱️"],
+suddenly:["adverb","quickly, without warning","Suddenly, the lights went out.","💡"],
+finally:["adverb","at last; after a long time","We finally reached the top.","🏔️"],
+usually:["adverb","most of the time","I usually walk to school.","🚶"],
+rarely:["adverb","not often","We rarely eat dessert on weekdays.","🍰"],
+nearly:["adverb","almost","It's nearly time for bed.","🛏️"],
+especially:["adverb","more than others; very much","I love fruit, especially mangoes.","🥭"],
+completely:["adverb","totally; all the way","The cup is completely empty.","🥤"],
+carefully:["adverb","with a lot of care","Carry the eggs carefully.","🥚"],
+quietly:["adverb","without much noise","Walk quietly past the baby's room.","🤫"],
+anxiously:["adverb","in a worried way","She waited anxiously for the results.","😟"]
+};
+// remove placeholder entries
+delete PACK.temperature2; delete PACK.temperature3; delete PACK.temperature4;
+
+/* ================= app logic ================= */
+const $ = id => document.getElementById(id);
+const input = $("wordInput"), card = $("resultCard");
+let MW_KEY = "";
+try { MW_KEY = localStorage.getItem("mwKey") || ""; } catch(e){}
+let recent = [];
+try { recent = JSON.parse(localStorage.getItem("recent")||"[]"); } catch(e){}
+
+function normalize(w){ return w.toLowerCase().trim().replace(/[^a-z'-]/g,""); }
+
+// try the word itself, then simple endings: cats→cat, boxes→box, tried→try, running→run, bigger→big
+function findInPack(word){
+  if (PACK[word]) return [word, PACK[word]];
+  const tries = [];
+  if (word.endsWith("ies")) tries.push(word.slice(0,-3)+"y");
+  if (word.endsWith("es")) tries.push(word.slice(0,-2));
+  if (word.endsWith("s")) tries.push(word.slice(0,-1));
+  if (word.endsWith("ied")) tries.push(word.slice(0,-3)+"y");
+  if (word.endsWith("ed")) { tries.push(word.slice(0,-2)); tries.push(word.slice(0,-1)); tries.push(word.slice(0,-3)); }
+  if (word.endsWith("ing")) { tries.push(word.slice(0,-3)); tries.push(word.slice(0,-3)+"e"); tries.push(word.slice(0,-4)); }
+  if (word.endsWith("ier")) tries.push(word.slice(0,-3)+"y");
+  if (word.endsWith("iest")) tries.push(word.slice(0,-4)+"y");
+  if (word.endsWith("er")) { tries.push(word.slice(0,-2)); tries.push(word.slice(0,-1)); tries.push(word.slice(0,-3)); }
+  if (word.endsWith("est")) { tries.push(word.slice(0,-3)); tries.push(word.slice(0,-2)); tries.push(word.slice(0,-4)); }
+  if (word.endsWith("ly")) tries.push(word.slice(0,-2));
+  for (const t of tries) if (t.length>1 && PACK[t]) return [t, PACK[t]];
+  return null;
+}
+
+function speak(text, rate){
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US"; u.rate = rate || 0.9;
+    const v = speechSynthesis.getVoices().find(v=>v.lang==="en-US"&&/Samantha|Google US/i.test(v.name))
+          || speechSynthesis.getVoices().find(v=>v.lang.startsWith("en-US"));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+window.__speak = speak;
+
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+function speakButtons(word){
+  return `<div class="speakRow">
+    <button class="speakBtn" onclick="__speak('${esc(word)}',0.85)">🔊 Say it</button>
+    <button class="speakBtn alt" onclick="__speak('${esc(word)}',0.45)">🐢 Slowly</button>
+  </div>`;
+}
+
+function renderPack(word, entry){
+  const [pos, def, ex, emoji] = entry;
+  card.innerHTML =
+    (emoji ? `<div class="emojiBig">${emoji}</div>` : "") +
+    `<div class="wordLine"><span class="theWord">${esc(word)}</span><span class="pos">${esc(pos)}</span></div>` +
+    speakButtons(word) +
+    `<div class="sense">
+       <div class="defText">${esc(def)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${esc(def)}',0.9)">🔊</button></div>
+       <div class="exText">“${esc(ex)}”</div>
+     </div>
+     <span class="badge offline">📦 from my word pack</span>`;
+  card.classList.add("show");
+  speak(word, 0.85);
+}
+
+function renderMW(word, entries){
+  let html = `<div class="wordLine"><span class="theWord">${esc(word)}</span></div>` + speakButtons(word);
+  let count = 0;
+  for (const e of entries){
+    if (!e.shortdef || !e.shortdef.length) continue;
+    const pos = e.fl || "";
+    for (const d of e.shortdef.slice(0,2)){
+      html += `<div class="sense">
+        <div class="defText">${esc(d)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${esc(d)}',0.9)">🔊</button></div>
+        ${pos?`<div class="exText">(${esc(pos)})</div>`:""}
+      </div>`;
+      if (++count >= 3) break;
+    }
+    if (count >= 3) break;
+  }
+  html += `<span class="badge online">🌐 from Merriam-Webster</span>`;
+  card.innerHTML = html; card.classList.add("show");
+  speak(word, 0.85);
+}
+
+function renderMsg(html){ card.innerHTML = `<div class="msg">${html}</div>`; card.classList.add("show"); }
+
+function renderSuggestions(list){
+  renderMsg(`Hmm, I don't know that word. Did you mean:`);
+  const chips = document.createElement("div"); chips.className = "chips";
+  list.slice(0,6).forEach(w=>{
+    const b = document.createElement("button"); b.className="chip"; b.textContent = w;
+    b.onclick = ()=>{ input.value = w; lookup(); };
+    chips.appendChild(b);
+  });
+  card.appendChild(chips);
+}
+
+async function lookup(){
+  const word = normalize(input.value);
+  if (!word) return;
+  input.blur();
+  const hit = findInPack(word);
+  if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); return; }
+
+  if (!MW_KEY){
+    renderMsg(`That word isn't in my word pack yet. 🌱<br><span style="font-size:14px;color:#4a6a8a">Grown-ups: add a Merriam-Webster key in ⚙️ so I can look up any word online.</span>`);
+    return;
+  }
+  renderMsg("Looking it up… 🔍");
+  try{
+    const r = await fetch(`https://www.dictionaryapi.com/api/v3/references/sd2/json/${encodeURIComponent(word)}?key=${encodeURIComponent(MW_KEY)}`);
+    const data = await r.json();
+    if (Array.isArray(data) && data.length && typeof data[0] === "object"){
+      renderMW(word, data); addRecent(word);
+    } else if (Array.isArray(data) && data.length && typeof data[0] === "string"){
+      renderSuggestions(data);
+    } else {
+      renderMsg(`I couldn't find “${esc(word)}”. Check the spelling and try again. ✏️`);
+    }
+  }catch(e){
+    renderMsg(`I can't reach the online dictionary right now. 📡<br><span style="font-size:14px;color:#4a6a8a">Check the internet, or try another word from the pack.</span>`);
+  }
+}
+
+function addRecent(w){
+  recent = [w, ...recent.filter(x=>x!==w)].slice(0,12);
+  try{ localStorage.setItem("recent", JSON.stringify(recent)); }catch(e){}
+  drawRecent();
+}
+function drawRecent(){
+  const box = $("recentChips"); box.innerHTML = "";
+  $("recentTitle").style.display = recent.length ? "block" : "none";
+  recent.forEach(w=>{
+    const b = document.createElement("button"); b.className="chip"; b.textContent=w;
+    b.onclick = ()=>{ input.value=w; lookup(); };
+    box.appendChild(b);
+  });
+}
+
+$("goBtn").onclick = lookup;
+input.addEventListener("keydown", e=>{ if(e.key==="Enter") lookup(); });
+$("gearBtn").onclick = ()=>{ const s=$("settings"); s.classList.toggle("show"); $("mwKey").value = MW_KEY; };
+$("saveKey").onclick = ()=>{
+  MW_KEY = $("mwKey").value.trim();
+  try{ localStorage.setItem("mwKey", MW_KEY); }catch(e){}
+  $("settings").classList.remove("show");
+};
+drawRecent();
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+
+// Register the service worker → after the first online visit,
+// the whole app (including the word pack) works fully offline.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
