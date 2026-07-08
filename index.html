@@ -74,6 +74,13 @@
     font:inherit; font-size:16px; padding:8px 14px; background:var(--card);
     border:2px solid var(--ink); border-radius:14px; cursor:pointer;
   }
+  .profiles{display:flex; gap:8px; justify-content:center; margin:0 0 14px;}
+  .pBtn{
+    font:inherit; font-size:15px; font-weight:700; padding:8px 18px;
+    border:2px solid var(--ink); border-radius:16px; background:var(--card);
+    cursor:pointer; opacity:.5;
+  }
+  .pBtn.active{background:var(--sun); opacity:1;}
   .recentTitle{font-size:14px; color:#4a6a8a; text-align:center; margin:22px 0 0; letter-spacing:1px;}
   #settings{
     display:none; margin-top:18px; background:var(--card); border:3px solid var(--ink);
@@ -95,6 +102,12 @@
     <button id="gearBtn" aria-label="Settings">⚙️</button>
   </header>
 
+  <div class="profiles">
+    <button class="pBtn" data-p="Aria">Aria</button>
+    <button class="pBtn" data-p="Ethan">Ethan</button>
+    <button class="pBtn" data-p="Others">Others</button>
+  </div>
+
   <div class="searchRow">
     <input id="wordInput" type="text" placeholder="Type a word…" autocomplete="off" autocapitalize="none" autocorrect="off" enterkeyhint="search">
     <button id="goBtn">Look&nbsp;up</button>
@@ -105,8 +118,13 @@
   <div id="settings">
     <label for="mwKey">Merriam-Webster Elementary Dictionary API key (for grown-ups)</label>
     <input id="mwKey" type="text" placeholder="paste key here">
-    <button id="saveKey">Save key</button>
     <div class="hint">Free key: dictionaryapi.com → register → request the <b>Elementary Dictionary</b> API. Used only when a word is not in the built-in word pack.</div>
+    <label for="syncUrl" style="margin-top:14px">Google Sheet sync URL (Apps Script /exec)</label>
+    <input id="syncUrl" type="text" placeholder="https://script.google.com/macros/s/…/exec">
+    <div class="hint">Every looked-up word is saved on this device first, then synced to your Google Sheet (one tab per profile) whenever the phone is online.</div>
+    <label for="devName" style="margin-top:14px">Device name</label>
+    <input id="devName" type="text" placeholder="e.g. Aria-iPhone14">
+    <button id="saveKey">Save</button>
   </div>
 
   <p class="recentTitle" id="recentTitle" style="display:none">WORDS I LOOKED UP</p>
@@ -587,10 +605,59 @@ delete PACK.temperature2; delete PACK.temperature3; delete PACK.temperature4;
 /* ================= app logic ================= */
 const $ = id => document.getElementById(id);
 const input = $("wordInput"), card = $("resultCard");
-let MW_KEY = "";
+let MW_KEY = "", SYNC_URL = "", DEVICE = "iPhone", PROFILE = "Aria";
 try { MW_KEY = localStorage.getItem("mwKey") || ""; } catch(e){}
+try { SYNC_URL = localStorage.getItem("syncUrl") || ""; } catch(e){}
+try { DEVICE = localStorage.getItem("devName") || "iPhone"; } catch(e){}
+try { PROFILE = localStorage.getItem("profile") || "Aria"; } catch(e){}
 let recent = [];
-try { recent = JSON.parse(localStorage.getItem("recent")||"[]"); } catch(e){}
+function loadRecent(){
+  recent = [];
+  try { recent = JSON.parse(localStorage.getItem("recent_"+PROFILE)||"[]"); } catch(e){}
+}
+loadRecent();
+// word-log queue: saved locally first, synced to Google Sheet when online
+let pending = [];
+try { pending = JSON.parse(localStorage.getItem("pending")||"[]"); } catch(e){}
+
+function setProfile(p){
+  PROFILE = p;
+  try{ localStorage.setItem("profile", p); }catch(e){}
+  document.querySelectorAll(".pBtn").forEach(b=>b.classList.toggle("active", b.dataset.p===p));
+  loadRecent(); drawRecent();
+  card.classList.remove("show");
+  input.value = "";
+}
+document.querySelectorAll(".pBtn").forEach(b=>{ b.onclick = ()=>setProfile(b.dataset.p); });
+
+function logLookup(word, source){
+  pending.push({ t:new Date().toISOString(), p:PROFILE, w:word, s:source, d:DEVICE });
+  if (pending.length > 500) pending = pending.slice(-500);
+  try{ localStorage.setItem("pending", JSON.stringify(pending)); }catch(e){}
+  trySync();
+}
+
+let syncing = false;
+function trySync(){
+  if (syncing || !SYNC_URL || !pending.length || !navigator.onLine) return;
+  syncing = true;
+  const batch = pending.slice();
+  fetch(SYNC_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify({ entries: batch })
+  })
+  .then(r=>r.text())
+  .then(t=>{
+    if (t.trim().startsWith("ok")){
+      pending = pending.slice(batch.length);
+      try{ localStorage.setItem("pending", JSON.stringify(pending)); }catch(e){}
+    }
+  })
+  .catch(()=>{})
+  .finally(()=>{ syncing = false; });
+}
+window.addEventListener("online", trySync);
 
 function normalize(w){ return w.toLowerCase().trim().replace(/[^a-z'-]/g,""); }
 
@@ -688,7 +755,7 @@ async function lookup(){
   if (!word) return;
   input.blur();
   const hit = findInPack(word);
-  if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); return; }
+  if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); logLookup(hit[0], "pack"); return; }
 
   if (!MW_KEY){
     renderMsg(`That word isn't in my word pack yet. 🌱<br><span style="font-size:14px;color:#4a6a8a">Grown-ups: add a Merriam-Webster key in ⚙️ so I can look up any word online.</span>`);
@@ -699,7 +766,7 @@ async function lookup(){
     const r = await fetch(`https://www.dictionaryapi.com/api/v3/references/sd2/json/${encodeURIComponent(word)}?key=${encodeURIComponent(MW_KEY)}`);
     const data = await r.json();
     if (Array.isArray(data) && data.length && typeof data[0] === "object"){
-      renderMW(word, data); addRecent(word);
+      renderMW(word, data); addRecent(word); logLookup(word, "mw");
     } else if (Array.isArray(data) && data.length && typeof data[0] === "string"){
       renderSuggestions(data);
     } else {
@@ -712,7 +779,7 @@ async function lookup(){
 
 function addRecent(w){
   recent = [w, ...recent.filter(x=>x!==w)].slice(0,12);
-  try{ localStorage.setItem("recent", JSON.stringify(recent)); }catch(e){}
+  try{ localStorage.setItem("recent_"+PROFILE, JSON.stringify(recent)); }catch(e){}
   drawRecent();
 }
 function drawRecent(){
@@ -727,13 +794,24 @@ function drawRecent(){
 
 $("goBtn").onclick = lookup;
 input.addEventListener("keydown", e=>{ if(e.key==="Enter") lookup(); });
-$("gearBtn").onclick = ()=>{ const s=$("settings"); s.classList.toggle("show"); $("mwKey").value = MW_KEY; };
+$("gearBtn").onclick = ()=>{
+  const s=$("settings"); s.classList.toggle("show");
+  $("mwKey").value = MW_KEY; $("syncUrl").value = SYNC_URL; $("devName").value = DEVICE;
+};
 $("saveKey").onclick = ()=>{
   MW_KEY = $("mwKey").value.trim();
-  try{ localStorage.setItem("mwKey", MW_KEY); }catch(e){}
+  SYNC_URL = $("syncUrl").value.trim();
+  DEVICE = $("devName").value.trim() || DEVICE;
+  try{
+    localStorage.setItem("mwKey", MW_KEY);
+    localStorage.setItem("syncUrl", SYNC_URL);
+    localStorage.setItem("devName", DEVICE);
+  }catch(e){}
   $("settings").classList.remove("show");
+  trySync();
 };
-drawRecent();
+setProfile(PROFILE);
+trySync();
 if ('speechSynthesis' in window) speechSynthesis.getVoices();
 
 // Register the service worker → after the first online visit,

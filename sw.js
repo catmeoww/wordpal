@@ -1,6 +1,6 @@
 /* Word Pal service worker — makes the app fully usable offline.
    Bump CACHE version whenever you update index.html so devices pick up the new copy. */
-const CACHE = "wordpal-v1";
+const CACHE = "wordpal-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -23,6 +23,9 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
+  // Let non-GET requests (e.g. the Google Sheet sync POST) pass through untouched.
+  if (e.request.method !== "GET") return;
+
   const url = new URL(e.request.url);
 
   // Online dictionary lookups: network only (the app shows a friendly
