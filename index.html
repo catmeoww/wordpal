@@ -53,6 +53,7 @@
   .emojiBig{font-size:72px; text-align:center; line-height:1.1; margin:2px 0 8px;}
   .wordLine{display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;}
   .theWord{font-size:34px; font-weight:800;}
+  .sylText{text-align:center; font-size:17px; color:#4a6a8a; margin-top:4px; letter-spacing:2px;}
   .pos{font-size:15px; background:var(--sky); border-radius:10px; padding:3px 10px; color:#4a6a8a;}
   .speakRow{display:flex; justify-content:center; gap:10px; margin:12px 0 4px;}
   .speakBtn{
@@ -680,26 +681,103 @@ function findInPack(word){
   return null;
 }
 
+function pickVoice(){
+  const vs = speechSynthesis.getVoices();
+  return vs.find(v=>v.lang==="en-US"&&/Samantha|Google US/i.test(v.name))
+      || vs.find(v=>v.lang.startsWith("en-US"));
+}
 function speak(text, rate){
   try{
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "en-US"; u.rate = rate || 0.9;
-    const v = speechSynthesis.getVoices().find(v=>v.lang==="en-US"&&/Samantha|Google US/i.test(v.name))
-          || speechSynthesis.getVoices().find(v=>v.lang.startsWith("en-US"));
-    if (v) u.voice = v;
+    const v = pickVoice(); if (v) u.voice = v;
     speechSynthesis.speak(u);
   }catch(e){}
 }
 window.__speak = speak;
 
-function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+/* Split a word into syllables (simple rules — MW's own split is used
+   for online lookups, this covers the offline word pack). */
+function syllabify(word){
+  word = word.toLowerCase().replace(/[^a-z]/g,"");
+  if (word.length <= 3) return [word];
+  const vowels = "aeiouy";
+  const groups = [];
+  let i = 0;
+  while (i < word.length){
+    if (vowels.includes(word[i]) && !(word[i]==="y" && i===0)){
+      let j = i;
+      while (j+1 < word.length && vowels.includes(word[j+1])) j++;
+      groups.push([i,j]); i = j+1;
+    } else i++;
+  }
+  if (groups.length <= 1) return [word];
+  // silent final e (hide, whale) — unless it's a consonant+le ending (ta-ble)
+  const last = groups[groups.length-1];
+  const cLe = word.endsWith("le") && word.length>=4 && !vowels.includes(word[word.length-3]);
+  if (!cLe && last[0]===last[1] && last[0]===word.length-1 && word[last[0]]==="e"){
+    groups.pop();
+    if (groups.length <= 1) return [word];
+  }
+  const digraphs = ["ch","sh","th","ph","wh","gh","ck","qu"];
+  const blends = ["bl","br","cl","cr","dr","fl","fr","gl","gr","pl","pr","tr","tw"];
+  let cuts = [];
+  for (let g=0; g<groups.length-1; g++){
+    const endV = groups[g][1], startV = groups[g+1][0];
+    const cons = startV - endV - 1;
+    if (cons <= 1) cuts.push(endV+1);                       // li-on, o-pen
+    else {
+      const pair = word.slice(endV+1, endV+3);
+      if (cons===2 && (digraphs.includes(pair) || blends.includes(pair))) cuts.push(endV+1); // wea-ther, se-cret
+      else cuts.push(endV+2);                               // bas-ket, whis-per
+    }
+  }
+  if (cLe){
+    const cutPos = word.length-3;
+    cuts = cuts.filter(c=>c<cutPos-0 && c!==cutPos+1);
+    if (!cuts.includes(cutPos)) cuts.push(cutPos);
+    cuts.sort((a,b)=>a-b);
+  }
+  const out = []; let prev = 0;
+  cuts.forEach(c=>{ if (c>prev && c<word.length){ out.push(word.slice(prev,c)); prev=c; } });
+  out.push(word.slice(prev));
+  return out.filter(Boolean);
+}
 
-function speakButtons(word){
+// 🐢 button: say each syllable slowly, then the whole word
+function speakSyllables(word, sylStr){
+  try{
+    speechSynthesis.cancel();
+    const syls = (sylStr||"").split("|").filter(Boolean);
+    const parts = syls.length>1 ? syls : [word];
+    const v = pickVoice();
+    parts.forEach(s=>{
+      const u = new SpeechSynthesisUtterance(s);
+      u.lang="en-US"; u.rate=0.45; if(v) u.voice=v;
+      speechSynthesis.speak(u);
+    });
+    const w = new SpeechSynthesisUtterance(word);
+    w.lang="en-US"; w.rate=0.85; if(v) w.voice=v;
+    speechSynthesis.speak(w);
+  }catch(e){}
+}
+window.__speakSyl = speakSyllables;
+
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+// for words/text passed into onclick='__speak(...)' handlers
+function jsArg(s){ return (s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+function speakButtons(word, syls){
+  const s = jsArg((syls && syls.length ? syls : syllabify(word)).join("|"));
   return `<div class="speakRow">
-    <button class="speakBtn" onclick="__speak('${esc(word)}',0.85)">🔊 Say it</button>
-    <button class="speakBtn alt" onclick="__speak('${esc(word)}',0.45)">🐢 Slowly</button>
+    <button class="speakBtn" onclick="__speak('${jsArg(word)}',0.85)">🔊 Say it</button>
+    <button class="speakBtn alt" onclick="__speakSyl('${jsArg(word)}','${s}')">🐢 Syllables</button>
   </div>`;
+}
+function sylLine(word, syls){
+  const list = (syls && syls.length ? syls : syllabify(word));
+  return list.length>1 ? `<div class="sylText">${esc(list.join(" · "))}</div>` : "";
 }
 
 function renderPack(word, entry){
@@ -707,9 +785,10 @@ function renderPack(word, entry){
   card.innerHTML =
     (emoji ? `<div class="emojiBig">${emoji}</div>` : "") +
     `<div class="wordLine"><span class="theWord">${esc(word)}</span><span class="pos">${esc(pos)}</span></div>` +
+    sylLine(word) +
     speakButtons(word) +
     `<div class="sense">
-       <div class="defText">${esc(def)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${esc(def)}',0.9)">🔊</button></div>
+       <div class="defText">${esc(def)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${jsArg(def)}',0.9)">🔊</button></div>
        <div class="exText">“${esc(ex)}”</div>
      </div>
      <span class="badge offline">📦 from my word pack</span>`;
@@ -718,14 +797,20 @@ function renderPack(word, entry){
 }
 
 function renderMW(word, entries){
-  let html = `<div class="wordLine"><span class="theWord">${esc(word)}</span></div>` + speakButtons(word);
+  // MW marks syllable breaks in hwi.hw, e.g. "enor*mous" — use the official split
+  let syls = null;
+  const hw = entries[0] && entries[0].hwi && entries[0].hwi.hw;
+  if (hw && hw.includes("*")){
+    syls = hw.split("*").map(s=>s.replace(/[^a-zA-Z'-]/g,"")).filter(Boolean);
+  }
+  let html = `<div class="wordLine"><span class="theWord">${esc(word)}</span></div>` + sylLine(word, syls) + speakButtons(word, syls);
   let count = 0;
   for (const e of entries){
     if (!e.shortdef || !e.shortdef.length) continue;
     const pos = e.fl || "";
     for (const d of e.shortdef.slice(0,2)){
       html += `<div class="sense">
-        <div class="defText">${esc(d)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${esc(d)}',0.9)">🔊</button></div>
+        <div class="defText">${esc(d)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${jsArg(d)}',0.9)">🔊</button></div>
         ${pos?`<div class="exText">(${esc(pos)})</div>`:""}
       </div>`;
       if (++count >= 3) break;
