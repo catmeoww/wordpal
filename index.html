@@ -824,8 +824,30 @@ function renderMW(word, entries){
 
 function renderMsg(html){ card.innerHTML = `<div class="msg">${html}</div>`; card.classList.add("show"); }
 
-function renderSuggestions(list){
-  renderMsg(`Hmm, I don't know that word. Did you mean:`);
+// render results from the free full dictionary (dictionaryapi.dev)
+function renderDict2(word, data){
+  let html = `<div class="wordLine"><span class="theWord">${esc(word)}</span></div>` + sylLine(word) + speakButtons(word);
+  let count = 0;
+  for (const entry of data){
+    for (const m of (entry.meanings||[])){
+      for (const def of (m.definitions||[]).slice(0,2)){
+        html += `<div class="sense">
+          <div class="defText">${esc(def.definition)} <button class="speakBtn alt" style="font-size:14px;padding:6px 10px" onclick="__speak('${jsArg(def.definition)}',0.9)">🔊</button></div>
+          <div class="exText">${m.partOfSpeech?`(${esc(m.partOfSpeech)}) `:""}${def.example?`“${esc(def.example)}”`:""}</div>
+        </div>`;
+        if (++count >= 3) break;
+      }
+      if (count >= 3) break;
+    }
+    if (count >= 3) break;
+  }
+  html += `<span class="badge online">🌐 from online dictionary</span>`;
+  card.innerHTML = html; card.classList.add("show");
+  speak(word, 0.85);
+}
+
+function renderSuggestions(list, msg){
+  renderMsg(msg || `Hmm, I don't know that word. Did you mean:`);
   const chips = document.createElement("div"); chips.className = "chips";
   list.slice(0,6).forEach(w=>{
     const b = document.createElement("button"); b.className="chip"; b.textContent = w;
@@ -835,6 +857,69 @@ function renderSuggestions(list){
   card.appendChild(chips);
 }
 
+// spelling variants to retry online: plurals, verb endings, latin plurals
+function wordVariants(word){
+  const v = [word];
+  const push = w => { if (w && w.length>1 && !v.includes(w)) v.push(w); };
+  if (word.endsWith("ae")) push(word.slice(0,-1));                 // papillae -> papilla
+  if (word.endsWith("ies")) push(word.slice(0,-3)+"y");
+  if (word.endsWith("ves")) { push(word.slice(0,-3)+"f"); push(word.slice(0,-3)+"fe"); }
+  if (word.endsWith("es")) push(word.slice(0,-2));
+  if (word.endsWith("s")) push(word.slice(0,-1));
+  if (word.endsWith("ied")) push(word.slice(0,-3)+"y");
+  if (word.endsWith("ed")) { push(word.slice(0,-2)); push(word.slice(0,-1)); push(word.slice(0,-3)); }
+  if (word.endsWith("ing")) { push(word.slice(0,-3)); push(word.slice(0,-3)+"e"); push(word.slice(0,-4)); }
+  if (word.endsWith("i")) push(word.slice(0,-1)+"us");             // fungi -> fungus
+  return v;
+}
+
+// how many letter changes apart two words are
+function editDist(a, b){
+  const m = a.length, n = b.length;
+  if (Math.abs(m-n) > 3) return 99;
+  const dp = Array.from({length:m+1}, (_,i)=>{ const r = new Array(n+1).fill(0); r[0]=i; return r; });
+  for (let j=1; j<=n; j++) dp[0][j] = j;
+  for (let i=1; i<=m; i++)
+    for (let j=1; j<=n; j++)
+      dp[i][j] = Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return dp[m][n];
+}
+
+// offline typo help: closest words from the built-in pack
+function packSuggestions(word){
+  const out = [];
+  for (const k in PACK){
+    const d = editDist(word, k);
+    if (d > 0 && d <= 2) out.push([d, k]);
+  }
+  out.sort((a,b)=>a[0]-b[0]);
+  return out.slice(0,6).map(x=>x[1]);
+}
+
+// online typo help: Datamuse fuzzy spelling + MW suggestions,
+// ranked by closeness to what was typed, then by how common the word is
+async function fetchSuggestions(word, mwSugs){
+  const cands = (mwSugs||[]).map(w=>({ w:String(w).toLowerCase(), score:0 }));
+  try{
+    const r = await fetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(word)}&max=10`);
+    if (r.ok){
+      const d = await r.json();
+      d.forEach(x=>{ if (x.word) cands.push({ w:x.word.toLowerCase(), score:x.score||0 }); });
+    }
+  }catch(e){}
+  const seen = {}, list = [];
+  cands.forEach(c=>{
+    if (!/^[a-z][a-z' -]*$/.test(c.w) || c.w === word) return;
+    if (seen[c.w]){ seen[c.w].score = Math.max(seen[c.w].score, c.score); return; }
+    const d = editDist(word, c.w);
+    if (d > 3) return;
+    seen[c.w] = { w:c.w, score:c.score, d:d };
+    list.push(seen[c.w]);
+  });
+  list.sort((a,b)=> a.d - b.d || b.score - a.score);
+  return list.slice(0,6).map(x=>x.w);
+}
+
 async function lookup(){
   const word = normalize(input.value);
   if (!word) return;
@@ -842,24 +927,53 @@ async function lookup(){
   const hit = findInPack(word);
   if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); logLookup(hit[0], "pack"); return; }
 
-  if (!MW_KEY){
-    renderMsg(`That word isn't in my word pack yet. 🌱<br><span style="font-size:14px;color:#4a6a8a">Grown-ups: add a Merriam-Webster key in ⚙️ so I can look up any word online.</span>`);
+  renderMsg("Looking it up… 🔍");
+  const variants = wordVariants(word);
+  let suggestions = null, netFail = false;
+
+  // 1) Merriam-Webster Elementary Dictionary (kid-level wording), if key set
+  if (MW_KEY){
+    for (const w of variants){
+      try{
+        const r = await fetch(`https://www.dictionaryapi.com/api/v3/references/sd2/json/${encodeURIComponent(w)}?key=${encodeURIComponent(MW_KEY)}`);
+        const data = await r.json();
+        if (Array.isArray(data) && data.length && typeof data[0] === "object" && data[0].shortdef){
+          renderMW(w, data); addRecent(w); logLookup(w, "mw"); return;
+        }
+        if (!suggestions && Array.isArray(data) && data.length && typeof data[0] === "string"){
+          suggestions = data;
+        }
+      }catch(e){ netFail = true; break; }
+    }
+  }
+
+  // 2) Free full dictionary (covers science words the kid dictionary lacks)
+  if (!netFail){
+    for (const w of variants){
+      try{
+        const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
+        if (r.ok){
+          const d = await r.json();
+          if (Array.isArray(d) && d[0] && d[0].meanings && d[0].meanings.length){
+            renderDict2(w, d); addRecent(w); logLookup(w, "dict"); return;
+          }
+        }
+      }catch(e){ netFail = true; break; }
+    }
+  }
+
+  if (netFail){
+    const ps = packSuggestions(word);
+    if (ps.length){
+      renderSuggestions(ps, `I'm offline and don't know that word — did you mean:`);
+    } else {
+      renderMsg(`I can't reach the online dictionary right now. 📡<br><span style="font-size:14px;color:#4a6a8a">Check the internet, or try another word from the pack.</span>`);
+    }
     return;
   }
-  renderMsg("Looking it up… 🔍");
-  try{
-    const r = await fetch(`https://www.dictionaryapi.com/api/v3/references/sd2/json/${encodeURIComponent(word)}?key=${encodeURIComponent(MW_KEY)}`);
-    const data = await r.json();
-    if (Array.isArray(data) && data.length && typeof data[0] === "object"){
-      renderMW(word, data); addRecent(word); logLookup(word, "mw");
-    } else if (Array.isArray(data) && data.length && typeof data[0] === "string"){
-      renderSuggestions(data);
-    } else {
-      renderMsg(`I couldn't find “${esc(word)}”. Check the spelling and try again. ✏️`);
-    }
-  }catch(e){
-    renderMsg(`I can't reach the online dictionary right now. 📡<br><span style="font-size:14px;color:#4a6a8a">Check the internet, or try another word from the pack.</span>`);
-  }
+  const sugs = await fetchSuggestions(word, suggestions);
+  if (sugs.length){ renderSuggestions(sugs); return; }
+  renderMsg(`I couldn't find “${esc(word)}”. Check the spelling and try again. ✏️`);
 }
 
 function addRecent(w){

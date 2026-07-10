@@ -1,6 +1,6 @@
 /* Word Pal service worker — makes the app fully usable offline.
    Bump CACHE version whenever you update index.html so devices pick up the new copy. */
-const CACHE = "wordpal-v5";
+const CACHE = "wordpal-v7";
 const ASSETS = [
   "./",
   "./index.html",
@@ -40,7 +40,7 @@ self.addEventListener("fetch", (e) => {
 
   // Online dictionary lookups: network only (the app shows a friendly
   // message if this fails while offline).
-  if (url.hostname === "www.dictionaryapi.com") {
+  if (url.hostname === "www.dictionaryapi.com" || url.hostname === "api.dictionaryapi.dev" || url.hostname === "api.datamuse.com") {
     e.respondWith(fetch(e.request));
     return;
   }
