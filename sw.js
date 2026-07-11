@@ -1,6 +1,6 @@
 /* Word Pal service worker — makes the app fully usable offline.
    Bump CACHE version whenever you update index.html so devices pick up the new copy. */
-const CACHE = "wordpal-v7";
+const CACHE = "wordpal-v9";
 const ASSETS = [
   "./",
   "./index.html",

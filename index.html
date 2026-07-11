@@ -106,7 +106,7 @@
   <div class="profiles">
     <button class="pBtn" data-p="Aria">Aria</button>
     <button class="pBtn" data-p="Ethan">Ethan</button>
-    <button class="pBtn" data-p="Others">Others</button>
+    <button class="pBtn" data-p="Others">Guest</button>
   </div>
 
   <div class="searchRow">
@@ -614,6 +614,7 @@ try { PROFILE = localStorage.getItem("profile") || "Aria"; } catch(e){}
 let recent = [];
 function loadRecent(){
   recent = [];
+  if (PROFILE === "Others") return; // 無痕: nothing saved, starts clean
   try { recent = JSON.parse(localStorage.getItem("recent_"+PROFILE)||"[]"); } catch(e){}
 }
 loadRecent();
@@ -631,7 +632,16 @@ function setProfile(p){
 }
 document.querySelectorAll(".pBtn").forEach(b=>{ b.onclick = ()=>setProfile(b.dataset.p); });
 
+// remember the last logged lookup so repeats aren't written twice
+let lastLog = "";
+try { lastLog = localStorage.getItem("lastLog") || ""; } catch(e){}
+
 function logLookup(word, source){
+  if (PROFILE === "Others") return;            // 無痕 mode: never recorded
+  const key = PROFILE + "|" + word;
+  if (key === lastLog) return;                 // same word as the previous lookup: skip
+  lastLog = key;
+  try{ localStorage.setItem("lastLog", lastLog); }catch(e){}
   pending.push({ t:new Date().toISOString(), p:PROFILE, w:word, s:source, d:DEVICE });
   if (pending.length > 500) pending = pending.slice(-500);
   try{ localStorage.setItem("pending", JSON.stringify(pending)); }catch(e){}
@@ -978,7 +988,9 @@ async function lookup(){
 
 function addRecent(w){
   recent = [w, ...recent.filter(x=>x!==w)].slice(0,12);
-  try{ localStorage.setItem("recent_"+PROFILE, JSON.stringify(recent)); }catch(e){}
+  if (PROFILE !== "Others"){ // 無痕: keep on screen this session only, never saved
+    try{ localStorage.setItem("recent_"+PROFILE, JSON.stringify(recent)); }catch(e){}
+  }
   drawRecent();
 }
 function drawRecent(){
