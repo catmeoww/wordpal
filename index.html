@@ -935,7 +935,7 @@ async function lookup(){
   if (!word) return;
   input.blur();
   const hit = findInPack(word);
-  if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); logLookup(hit[0], "pack"); return; }
+  if (hit){ renderPack(hit[0], hit[1]); addRecent(hit[0]); logLookup(hit[0], "pack"); input.value = ""; return; }
 
   renderMsg("Looking it up… 🔍");
   const variants = wordVariants(word);
@@ -948,7 +948,7 @@ async function lookup(){
         const r = await fetch(`https://www.dictionaryapi.com/api/v3/references/sd2/json/${encodeURIComponent(w)}?key=${encodeURIComponent(MW_KEY)}`);
         const data = await r.json();
         if (Array.isArray(data) && data.length && typeof data[0] === "object" && data[0].shortdef){
-          renderMW(w, data); addRecent(w); logLookup(w, "mw"); return;
+          renderMW(w, data); addRecent(w); logLookup(w, "mw"); input.value = ""; return;
         }
         if (!suggestions && Array.isArray(data) && data.length && typeof data[0] === "string"){
           suggestions = data;
@@ -965,7 +965,7 @@ async function lookup(){
         if (r.ok){
           const d = await r.json();
           if (Array.isArray(d) && d[0] && d[0].meanings && d[0].meanings.length){
-            renderDict2(w, d); addRecent(w); logLookup(w, "dict"); return;
+            renderDict2(w, d); addRecent(w); logLookup(w, "dict"); input.value = ""; return;
           }
         }
       }catch(e){ netFail = true; break; }
